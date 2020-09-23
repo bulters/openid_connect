@@ -3,7 +3,9 @@ module OpenIDConnect
     module Provider
       class Config
         class Response
-          include ActiveModel::Validations, AttrRequired, AttrOptional
+          include AttrOptional
+          include AttrRequired
+          include ActiveModel::Validations
 
           cattr_accessor :metadata_attributes
           attr_reader :raw
@@ -62,27 +64,27 @@ module OpenIDConnect
 
           def initialize(hash)
             (required_attributes + optional_attributes).each do |key|
-              self.send "#{key}=", hash[key]
+              send "#{key}=", hash[key]
             end
             @raw = hash
           end
 
           def as_json(options = {})
             validate!
-            (required_attributes + optional_attributes).inject({}) do |hash, _attr_|
-              value = self.send _attr_
-              hash.merge! _attr_ => value unless value.nil?
-              hash
+            (required_attributes + optional_attributes).each_with_object({}) do |_attr_, hash|
+              value = send _attr_
+              hash[_attr_] = value unless value.nil?
             end
           end
 
           def validate!
-            valid? or raise ValidationFailed.new(self)
+            valid? || raise(ValidationFailed.new(self))
           end
 
           def jwks
             @jwks ||= JSON.parse(
-              OpenIDConnect.http_client.get_content(jwks_uri)
+              Net::HTTP.get(URI(jwks_uri))
+              # OpenIDConnect.http_client.get_content(jwks_uri)
             ).with_indifferent_access
             JSON::JWK::Set.new @jwks[:keys]
           end
@@ -96,9 +98,9 @@ module OpenIDConnect
           def validate_issuer_matching
             if expected_issuer.present? && issuer != expected_issuer
               if OpenIDConnect.validate_discovery_issuer
-                errors.add :issuer, 'mismatch'
+                errors.add :issuer, "mismatch"
               else
-                OpenIDConnect.logger.warn 'ignoring issuer mismach.'
+                OpenIDConnect.logger.warn "ignoring issuer mismach."
               end
             end
           end
